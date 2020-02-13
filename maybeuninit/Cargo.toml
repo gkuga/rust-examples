@@ -1,15 +1,9 @@
 [package]
-name = "mkfifo"
+name = "maybeuninit"
 version = "0.1.0"
-<<<<<<< HEAD
-authors = ["gkuga"]
-=======
 authors = ["Gaku Yasui <isuya.kuga@gmail.com>"]
->>>>>>> 0de55970253d75e53b6ea4b8a83de50473992a37
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nix = "0.16.1"
-tempdir = "0.3.7"
