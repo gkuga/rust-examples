@@ -11,16 +11,16 @@ impl SelfRef {
             ptr: std::ptr::null(),
         };
         this.ptr = &this.x;
-
+        println!("x {}", this.x);
+        println!("&x {:?}", &this.x as *const u32);
         unsafe {
-            println!("x {}", this.x);
-            println!("&x {:?}", &this.x as *const u32);
             println!("*ptr {}", *this.ptr);
-            println!("ptr {:?}", this.ptr);
         }
-
+        println!("ptr {:?}", this.ptr);
         // まだアドレスは変わらないのでテストは成功する
         assert_eq!(&this.x as *const _, this.ptr);
+
+        println!("-- initilized --");
 
         // ここで値を返した瞬間にxのアドレスが変わり、ptrの値が不正となる
         this
@@ -29,13 +29,12 @@ impl SelfRef {
 
 fn main() {
     let v = SelfRef::new(0);
-
+    println!("x {}", v.x);
+    println!("&x {:?}", &v.x as *const u32);
     unsafe {
-        println!("x {}", v.x);
-        println!("&x {:?}", &v.x as *const u32);
         println!("*ptr {}", *v.ptr);
-        println!("ptr {:?}", v.ptr);
     }
+    println!("ptr {:?}", v.ptr);
 
     // v.xとv.ptrの値が異なるためテスト失敗
     assert_eq!(&v.x as *const _, v.ptr);
