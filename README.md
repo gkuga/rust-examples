@@ -41,9 +41,10 @@ cargo run --example <name>    # examples/<name>.rs, if any
 | Directory | Topic |
 |---|---|
 | [coroutine](coroutine/) | Coroutines as state machines with `Future`, Executor/Task/Waker, async/await, and why Rust futures are poll-based |
+| [async-epoll](async-epoll/) | A concurrent echo server on epoll: an IOSelector (Reactor) that wakes Tasks, with async/await on top (Linux only) |
 | [async-await](async-await/) | async blocks vs closures vs `async fn`, block modifiers, and the tokio tutorial |
 
-Suggested reading order: `thread` → `coroutine` → `pin` → `async-await`.
+Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `async-await`.
 
 ## Systems
 

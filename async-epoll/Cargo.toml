@@ -1,0 +1,11 @@
+[package]
+name = "async-epoll"
+version = "0.1.0"
+edition = "2021"
+
+# Linux only: uses epoll and eventfd.
+[dependencies]
+futures = "0.3"
+# The book's code uses the nix 0.20 API (epoll_create1 / epoll_ctl / epoll_wait
+# functions and nix::Error::Sys). Newer nix versions changed these APIs.
+nix = "0.20"
