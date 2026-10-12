@@ -377,6 +377,79 @@ Rust is unusual in combining stackless coroutines, a poll-based model, and no bu
 runtime. That combination is what makes futures zero-cost and usable without an
 allocator-heavy runtime, at the price of `Pin` and choosing an Executor yourself.
 
+### Go vs Rust + tokio
+
+The languages above fall into two families:
+
+| | async/await family (Rust, JS, C#, Python, Kotlin, C++20) | Lightweight-thread family (Go, Java 21 virtual threads, Erlang) |
+|---|---|---|
+| Coroutine | stackless | stackful (each goroutine has its own stack) |
+| Where it can suspend | only at `.await` | at any blocking call (Go 1.14+ can also preempt) |
+| Code style | `async` / `.await` written explicitly | looks like ordinary synchronous code |
+| Function "color" | yes: async vs plain functions | no |
+| Where suspended state lives | compiler-generated state machine | the goroutine's own stack |
+
+"Function color" is the split described in Bob Nystrom's "What Color is Your Function?"
+(2015): `.await` is only allowed inside async functions (that is why `main` cannot
+`.await`), so async spreads to callers.
+
+**Go has the same machinery, hidden in the runtime.** When a goroutine blocks in
+`conn.Read()`, the runtime parks it and runs another goroutine on the OS thread. The
+netpoller (epoll on Linux) detects readiness and puts the goroutine back on a run queue.
+That is the Executor, run queue, Waker, and Reactor from this crate, built into the
+language.
+
+**Rust once had this too.** Pre-1.0 Rust had green threads (`libgreen`), removed in 2014
+(RFC 230), because they cost:
+
+- a mandatory runtime (Rust also targets bare-metal and C-callable libraries)
+- a stack per thread (more memory than a state machine that stores only what it needs)
+- stack switching when calling C (like Go's cgo overhead)
+
+**tokio provides a Go-like runtime as a library.**
+
+| Feature | Go runtime | tokio |
+|---|---|---|
+| Spawn a lightweight unit | `go f()` | `tokio::spawn(async { ... })` |
+| Scheduler | M:N, work stealing | M:N, work stealing (multi-thread runtime) |
+| I/O readiness | netpoller | Reactor (via mio) |
+| Timers (`sleep`, `timeout`) | managed by the runtime | managed by the runtime |
+
+tokio's scheduler drew on Go's design (see the tokio blog post "Making the Tokio scheduler
+10x faster", 2019). What still differs is the unit being scheduled:
+
+| | Go | tokio |
+|---|---|---|
+| Unit | goroutine, stackful | Future (state machine), stackless |
+| Memory per unit | small stack that grows on demand | exactly the state machine's size, one allocation |
+| Switching | anywhere; the runtime can preempt | only at `.await` (cooperative) |
+| Function color | none | async vs plain |
+| Relation to the language | built in, cannot be removed | one library among others (e.g. Embassy for embedded) |
+
+**Timers vs preemption.** Both runtimes manage timers: `time.Sleep` and
+`tokio::time::sleep` park only that goroutine/task and the runtime wakes it when the time
+comes. Timers have no default duration; you pass one each time. The real difference is
+preemption, i.e. stopping a task that keeps running:
+
+| | Switches based on | Value (implementation detail, may change) |
+|---|---|---|
+| tokio | **count**: each `.await` spends a cooperative budget; when it runs out, the task yields | budget of 128 |
+| Go | **time**: a monitor thread (sysmon) preempts a goroutine that runs too long | about 10 ms |
+
+So with tokio, a computation that never `.await`s is never switched out, and blocking
+calls (`std::fs::read`, `std::thread::sleep`, heavy loops) stall the whole worker thread
+and every task on it. The division of labor is:
+
+| tokio takes care of | The programmer takes care of |
+|---|---|
+| when and on which thread each task is polled | not blocking inside async code (use `spawn_blocking` or async APIs such as `tokio::fs`) |
+| calling Wakers when I/O or timers are ready | yielding during long computations (`.await` points, or move the work to another thread) |
+| load balancing across worker threads | deciding which functions are async |
+
+In short: Go favors ease of writing and lets the runtime absorb the complexity and cost;
+Rust favors zero cost and leaves some of the complexity (function color, `Pin`, choosing
+an Executor, cooperating with it) to the programmer.
+
 ### References
 
 - Aaron Turon, [Zero-cost futures in Rust](https://aturon.github.io/blog/2016/08/11/futures/) (2016)
