@@ -277,6 +277,121 @@ So "`.await` waits until the value is ready" is how it looks from inside `sum()`
 thread is never spinning on `poll`; while one Future waits, the Executor is free to run
 others.
 
+## Why poll-based? (zero-cost futures)
+
+### Overhead and zero-cost
+
+**Overhead** is any cost beyond the work itself, compared with the best hand-written code
+for the same job. For async code the usual suspects are:
+
+- **Heap allocation** (`Box::new`, `Arc::new`)
+- **Dynamic dispatch** (`dyn Trait` calls go through a vtable and cannot be inlined)
+- **Synchronization** (`Mutex` locks, atomic reference counts in `Arc`)
+
+**Zero-cost abstraction** (in Stroustrup's words): "What you don't use, you don't pay for.
+And further: What you do use, you couldn't hand code any better." For futures, it means
+code built by composing Futures is as efficient as a hand-written state machine like
+`Hello` + `StateHello`.
+
+### Example: wait for two operations (join)
+
+**Callbacks (push): the child calls the parent.** `f` and `g` may finish in either order,
+so both callbacks must share a slot for the results:
+
+```rust
+let shared = Arc::new(Mutex::new((None, None))); // allocation + lock
+let s1 = shared.clone();
+f.on_complete(move |a| { s1.lock().unwrap().0 = Some(a); /* if both done, continue */ });
+let s2 = shared.clone();
+g.on_complete(move |b| { s2.lock().unwrap().1 = Some(b); /* if both done, continue */ });
+```
+
+Each callback is also registered with the event loop, which must hold callbacks of many
+different types, so they become `Box<dyn FnOnce>` (allocation + dynamic dispatch). This
+happens at every point of composition.
+
+**Polling (pull): the parent calls the child.**
+
+```rust
+enum Join<F: Future, G: Future> {
+    BothRunning(F, G),        // owns f and g by value
+    FirstDone(F::Output, G),  // stores f's result in its own field
+    SecondDone(F, G::Output),
+    Done,
+}
+```
+
+- `Join` owns `f` and `g`, so it calls `f.poll(cx)` directly: static dispatch, inlinable.
+- Results come back as return values and are stored in `Join` itself. Nothing is shared,
+  so no `Arc` or `Mutex`.
+- Inner Futures are embedded by value, so the whole thing is one enum whose size is known
+  at compile time. No allocation.
+- The only notification channel is one Waker per **task**, so the only allocation is
+  when a task is created (the `BoxFuture` in the book's `Task`), however many Futures are
+  composed inside it.
+
+```
+Callbacks (child -> parent)          Polling (parent -> child)
+
+  f --+                                Join
+      +--> shared state --> next        +-- f (owned)
+  g --+    (Arc<Mutex<..>>)             +-- g (owned)
+```
+
+The key difference is the direction of calls. With callbacks, children need a reference
+back to the parent's continuation, and several children point to the same parent:
+shared ownership. With polling, ownership stays a tree and results flow up as return
+values, which fits Rust's ownership model and costs nothing extra. In GC languages the
+garbage collector absorbs the cost of sharing, so callbacks are less of a problem there.
+
+Note: `examples/callback.rs` is actually zero-cost, because it calls each callback
+immediately. The overhead appears as soon as callbacks have to be *stored* to be called
+later, as real async I/O requires.
+
+### How the design evolved
+
+| | futures 0.1 (2016) | `std::future` (Rust 1.36+) |
+|---|---|---|
+| `poll` | `poll(&mut self)` | `poll(self: Pin<&mut Self>, cx: &mut Context)` |
+| Waking | `task::park()` (implicit, thread-local), `unpark()` | `Waker` passed explicitly in `Context` |
+| Composition | combinators (`and_then`, `join`, ...) | async/await (Rust 1.39+) |
+
+`Pin` was added for async/await: holding a reference across `.await` makes the generated
+state machine self-referential (see `../pin`). Combinator chains could not borrow across
+steps, so they did not need it.
+
+### Other languages
+
+| Language | Model | Drives the coroutine | Executor / runtime | Notes |
+|---|---|---|---|---|
+| **Rust** | async/await, stackless | poll (pull) + Waker | none built in (`tokio`, `futures`, own) | state machine embedded by value; Futures are lazy |
+| JavaScript | async/await on Promise | push: resolving a Promise schedules continuations | built-in event loop | GC; async functions start running immediately |
+| C# | async/await on `Task` | push: continuations registered on `Task` | built-in thread pool | compiler-generated state machine; `ValueTask` reduces allocations |
+| Python (asyncio) | async/await, stackless | hybrid: a `Task` drives the coroutine with `send()`, and Futures wake the Task via `add_done_callback` | `asyncio` event loop (library) | the Task / callback split is close to Rust's Task / Waker |
+| Kotlin | `suspend` functions, stackless | push: compiled to continuation-passing style (`Continuation.resumeWith`) | library (`kotlinx.coroutines`) | no `await` keyword at call sites |
+| C++20 | `co_await`, stackless | customizable via `promise_type` / awaiters | none in the standard library | frames are usually heap-allocated (may be elided) |
+| Go | goroutines, stackful | runtime scheduler (preemptive) | built-in M:N scheduler | no async/await; blocking calls look synchronous |
+| Java 21+ | virtual threads, stackful | runtime scheduler | built-in (JVM) | `CompletableFuture` is the older push-based API |
+
+Rust is unusual in combining stackless coroutines, a poll-based model, and no built-in
+runtime. That combination is what makes futures zero-cost and usable without an
+allocator-heavy runtime, at the price of `Pin` and choosing an Executor yourself.
+
+### References
+
+- Aaron Turon, [Zero-cost futures in Rust](https://aturon.github.io/blog/2016/08/11/futures/) (2016)
+- Aaron Turon, [Designing futures for Rust](https://aturon.github.io/blog/2016/09/07/futures-design/) (2016):
+  why callbacks were rejected, tasks as "a single, permanent callback", cancellation by drop
+- Tatsuya Kawano, [Rustのゼロコスト抽象化の効果をアセンブラで確認](https://blog.rust-jp.rs/tatsuya6502/posts/2019-12-zero-cost-abstraction/) (2019):
+  static dispatch, closures, and `Option` niche optimization checked in assembly
+- Melvin E. Conway, "Design of a Separable Transition-Diagram Compiler", CACM (1963):
+  early use of the term "coroutine"
+- Ana Lúcia de Moura and Roberto Ierusalimschy, "Revisiting Coroutines", ACM TOPLAS (2009):
+  classification (symmetric/asymmetric, stackful/stackless). Rust's async/await is
+  asymmetric and stackless.
+- Related design patterns: Active Object (scheduler + activation queue + futures) and
+  Reactor (I/O readiness -> wake the task)
+
 ## Run
 
 ```sh
