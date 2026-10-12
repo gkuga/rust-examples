@@ -30,6 +30,86 @@ h.__next__()
 
 Calling `poll` three times prints `Hello, World!`, the same as the Python version.
 
+## Without Arc (`examples/noop_waker.rs`)
+
+In `src/main.rs`, `Arc`, `Task`, and `Mutex` are not needed for the program itself:
+
+- `poll` needs a `&mut Context`, and a `Context` is built from a `Waker`.
+- The book builds the Waker with `futures::task::waker_ref`, which requires an
+  `&Arc<impl ArcWake>`. So `Task` and `Arc` exist only to obtain a Waker, not because
+  anything is shared.
+- The Waker is never used: `wake_by_ref` does nothing and `main` calls `poll` by hand.
+
+`noop_waker.rs` is the same program using `std::task::Waker::noop()`, with no `Arc`,
+`Task`, `Mutex`, or `futures` crate:
+
+```rust
+let mut cx = Context::from_waker(Waker::noop());
+let mut hello = Hello::new();
+let _ = Pin::new(&mut hello).poll(&mut cx); // Hello is Unpin, so Pin::new is fine
+```
+
+Why the book uses `Arc` anyway (likely reasons):
+
+- **No no-op Waker back then.** The book targets Rust 1.50; `Waker::noop()` was
+  stabilized in Rust 1.85. Implementing `ArcWake` was an easy way to get a Waker.
+- **Preparing for the next section.** In `scheduling.rs`, `Arc<Task>` is really needed:
+  the run queue, the Executor, and the Waker all hold the same Task.
+
+## With async/await (`examples/await_hello.rs`)
+
+`noop_waker.rs` with the hand-written state machine replaced by `async fn`. The compiler
+generates an equivalent state machine, and the code reads like the Python version:
+
+```rust
+async fn hello() {
+    print!("Hello, ");
+    yield_now().await; // suspend (StateHello::WORLD)
+    println!("World!");
+    yield_now().await; // suspend (StateHello::END)
+}
+```
+
+| | `noop_waker.rs` | `await_hello.rs` |
+|---|---|---|
+| State machine | `Hello` + `StateHello`, written by hand | generated from `async fn` |
+| Suspension point | returning `Poll::Pending` | `yield_now().await` |
+| Pinning | `Pin::new` (`Hello` is `Unpin`) | `pin!` (async futures are `!Unpin`) |
+| Hand-written `Future` | `Hello` | only `YieldOnce`, the thing to await on |
+
+`.await` needs a Future that actually returns `Pending` to suspend, so a minimal one
+(`YieldOnce`: `Pending` once, then `Ready`) is still written by hand.
+
+## With an Executor (`examples/await_block_on.rs`)
+
+`await_hello.rs` with the three manual `poll` calls replaced by `block_on(hello())`.
+
+`.await` cannot be used in `main` (a plain `fn`): at the top level, something has to
+receive `Pending` and call `poll` again. That is the Executor, here
+`futures::executor::block_on`.
+
+The one required change is in `YieldOnce`, which now wakes before returning `Pending`:
+
+```rust
+self.yielded = true;
+cx.waker().wake_by_ref(); // without this, block_on sleeps forever after the first poll
+Poll::Pending
+```
+
+A Future that returns `Pending` must arrange to be woken. `await_hello.rs` gets away
+without it only because it polls by hand with a no-op Waker. Since every suspension
+point goes through `YieldOnce`, this single line fixes all the `.await`s in `hello()`.
+(Passing `noop_waker.rs`'s `Hello` to `block_on` would instead need a wake in each
+`Pending` arm, which is the book's self-scheduling `Hello`.)
+
+| | `await_hello.rs` | `await_block_on.rs` |
+|---|---|---|
+| Who calls `poll` | `main`, three times by hand | `block_on` (Executor) |
+| Waker | `Waker::noop()` | `block_on`'s Waker (unparks the thread) |
+| Pinning | `pin!` in `main` | done inside `block_on` |
+| `YieldOnce` wakes before `Pending` | no (not needed) | yes (required) |
+| `futures` crate | not needed | needed |
+
 ## Scheduling version (`examples/scheduling.rs`)
 
 Instead of calling `poll` by hand, the coroutine is driven by a simple scheduler
@@ -171,8 +251,11 @@ others.
 ## Run
 
 ```sh
-cargo run                       # manual poll version
-cargo run --example scheduling  # scheduling version (Ctrl-C to exit)
-cargo run --example callback    # callback-based version
-cargo run --example async_await # async/await version
+cargo run                          # manual poll version
+cargo run --example noop_waker     # manual poll version without Arc
+cargo run --example await_hello    # manual poll version with async/await
+cargo run --example await_block_on # async/await driven by block_on
+cargo run --example scheduling     # scheduling version (Ctrl-C to exit)
+cargo run --example callback       # callback-based version
+cargo run --example async_await    # async/await version
 ```
