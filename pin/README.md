@@ -1,11 +1,47 @@
 * [RustのPinチョットワカル](https://tech-blog.optim.co.jp/entry/2020/03/05/160000#%E3%81%AA%E3%81%9CPin%E3%81%8C%E5%BF%85%E8%A6%81%E3%81%AB%E3%81%AA%E3%82%8B%E3%81%AE%E3%81%8B)
 
+## The core idea
+
+> **`Pin` checks `Unpin`, not `PhantomPinned`.**
+> `PhantomPinned` is just the simplest way to make a type `!Unpin`.
+
+```
+struct SelfRef { ..., _pin: PhantomPinned }
+  -> PhantomPinned is !Unpin
+  -> Unpin is an auto trait, so SelfRef is !Unpin too
+  -> Pin's DerefMut / get_mut / into_inner require T: Unpin, so they are unavailable
+  -> safe code cannot get &mut SelfRef, so it cannot move it (swap, move out, ...)
+```
+
+The bounds in `std` mention only `Unpin`:
+
+```rust
+impl<Ptr: Deref> Deref for Pin<Ptr> { ... }                        // &T: always
+impl<Ptr: DerefMut<Target: Unpin>> DerefMut for Pin<Ptr> { ... }   // &mut T: only if T: Unpin
+```
+
+- `*pin` goes through the inner pointer: `*a` on `Pin<Box<SelfRef>>` is `SelfRef`.
+  Reading (`&*a`, `a.x`) always works; writing (`&mut *a`, `a.x = 1`) needs `T: Unpin`.
+- `Pin` does nothing at runtime (`#[repr(transparent)]`, zero cost). The value is not
+  physically fixed: safe code *cannot* move it, and `unsafe` code (`get_unchecked_mut`)
+  *promises not to*. Moving it there is undefined behavior.
+- Moving the `Pin<Box<_>>` itself (`mem::swap(&mut a, &mut b)`) is fine: only the
+  pointers move. Swapping the contents (`mem::swap(&mut *a, &mut *b)`) does not compile.
+- Remove `_pin` and `SelfRef` becomes `Unpin`: `Box::pin` still compiles, but `Pin`
+  restricts nothing and the swap breaks the self-reference again.
+- `async` only makes the future `!Unpin`; it does not pin it. The future can be moved
+  freely until it is pinned by `.await` (inside the already pinned parent) or by the
+  executor (`Box::pin` / `pin!` before the first `poll`).
+
 ## Examples
 
 | Run | What it shows |
 |---|---|
 | `cargo run` | The problem: a self-referential struct breaks when moved (the assert fails) |
+| `cargo run --example box_not_enough` | `Box` alone is not enough: safe code can still swap or move the value out |
+| `cargo run --example box_pinned` | Fixes `box_not_enough` with `Pin`: swapping or moving the contents no longer compiles |
 | `cargo run --example pinned` | The fix: `PhantomPinned` + `Box::pin` keep `ptr` pointing to `x` after moves |
+| `cargo run --example stack_pinned` | Same fix without `Box`: pin on the stack with `pin!`, then initialize in two steps |
 | `cargo run --example unpin` | `Pin` only restricts `!Unpin` types; for `Unpin` types it is a no-op |
 | `cargo run --example async_pin` | Why `Future::poll` takes `Pin<&mut Self>`: async blocks can be self-referential |
 
