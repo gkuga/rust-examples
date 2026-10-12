@@ -1,0 +1,7 @@
+[package]
+# `box` is a Rust keyword and cannot be used as a package name
+name = "box-examples"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
