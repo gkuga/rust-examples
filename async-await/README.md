@@ -1,6 +1,14 @@
-# async/await Examples
+# async/await Syntax
 
-Based on the tokio tutorial: https://tokio.rs/tokio/tutorial/spawning
+The syntax side of async/await: blocks, async blocks, closures, and `async fn`. No
+runtime library is needed; `src/main.rs` runs each snippet with
+`futures::executor::block_on`.
+
+```sh
+cargo run
+```
+
+For using Tokio (including the Tokio tutorial's mini-redis), see `../tokio-basics`.
 
 ## Blocks and block modifiers
 
@@ -134,9 +142,9 @@ fn hello() -> impl Future<Output = ()> {
 So `async fn hello` and `|| async { ... }` are **functions**, and calling them gives a
 **Future**. An async block is written directly as the Future.
 
-### In this crate
+### In practice
 
-`src/main.rs` passes an async block to `tokio::spawn`:
+Passing an async block to `tokio::spawn` (from `../tokio-basics/examples/redis_server.rs`):
 
 ```rust
 tokio::spawn(async move {

@@ -42,9 +42,10 @@ cargo run --example <name>    # examples/<name>.rs, if any
 |---|---|
 | [coroutine](coroutine/) | Coroutines as state machines with `Future`, Executor/Task/Waker, async/await, and why Rust futures are poll-based |
 | [async-epoll](async-epoll/) | A concurrent echo server on epoll: an IOSelector (Reactor) that wakes Tasks, with async/await on top (Linux only) |
-| [async-await](async-await/) | async blocks vs closures vs `async fn`, block modifiers, and the tokio tutorial |
+| [tokio-basics](tokio-basics/) | Tokio: echo server, blocking vs async sleep, std vs tokio Mutex, oneshot, `spawn_blocking`, and the tutorial's mini-redis |
+| [async-await](async-await/) | async/await syntax: block modifiers, async blocks vs closures vs `async fn` |
 
-Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `async-await`.
+Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `tokio-basics` → `async-await`.
 
 ## Systems
 
@@ -71,6 +72,3 @@ Longer write-ups live in each directory's README:
   - [Blocks and block modifiers](async-await/README.md#blocks-and-block-modifiers)
   - [async block vs closure vs async fn](async-await/README.md#async-block-vs-closure-vs-async-fn)
 - **Locks** ([deadlock/README.md](deadlock/README.md)): RAII and guards
-
-Note: `async-await/src/main.rs` currently does not compile (`process` is called with two
-arguments but takes one); it is an in-progress step of the tokio tutorial.

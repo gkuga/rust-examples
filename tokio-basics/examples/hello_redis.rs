@@ -1,3 +1,8 @@
+// mini-redis client from the Tokio tutorial ("Hello Tokio"):
+// https://tokio.rs/tokio/tutorial/hello-tokio
+//
+// Start the server first: `cargo run --example redis_server`.
+
 use mini_redis::{client, Result};
 
 #[tokio::main]

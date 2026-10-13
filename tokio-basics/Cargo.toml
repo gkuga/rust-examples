@@ -1,0 +1,11 @@
+[package]
+name = "tokio-basics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# The book uses 1.4.0; any 1.x works for these examples.
+tokio = { version = "1", features = ["full"] }
+# for the Tokio tutorial examples (redis_server, hello_redis)
+mini-redis = "0.4"
+bytes = "1"

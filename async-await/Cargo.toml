@@ -1,11 +1,8 @@
 [package]
 name = "async-await"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
-mini-redis = "0.4"
-bytes = "1.2.1"
+# only for futures::executor::block_on, a minimal Executor
+futures = "0.3"

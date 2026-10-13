@@ -1,7 +1,20 @@
+// mini-redis server from the Tokio tutorial ("Shared state"):
+// https://tokio.rs/tokio/tutorial/shared-state
+//
+// Each connection is handled by its own task (tokio::spawn). The key-value
+// store is shared between tasks as Arc<Mutex<HashMap>>. std::sync::Mutex is
+// fine here because the lock is never held across `.await` (see std_mutex.rs
+// and tokio_mutex.rs).
+//
+// Run the server, then `cargo run --example hello_redis` in another terminal.
+
+use bytes::Bytes;
 use mini_redis::{Connection, Frame};
-use tokio::net::{TcpListener, TcpStream};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::net::{TcpListener, TcpStream};
+
+type Db = Arc<Mutex<HashMap<String, Bytes>>>;
 
 #[tokio::main]
 async fn main() {
@@ -10,31 +23,33 @@ async fn main() {
     let db = Arc::new(Mutex::new(HashMap::new()));
     loop {
         let (socket, _) = listener.accept().await.unwrap();
+        // each task gets its own handle to the shared store
         let db = db.clone();
         println!("Accepted");
+        // `async move` creates a Future that owns `socket` and `db`;
+        // tokio::spawn hands it to the Executor as a new task
         tokio::spawn(async move {
             process(socket, db).await;
         });
     }
 }
 
-async fn process(socket: TcpStream) {
-    use bytes::Bytes;
+async fn process(socket: TcpStream, db: Db) {
     use mini_redis::Command::{self, Get, Set};
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
-    type Db = Arc<Mutex<HashMap<String, Bytes>>>;
-    let mut db = HashMap::new();
+
     let mut connection = Connection::new(socket);
     while let Some(frame) = connection.read_frame().await.unwrap() {
         let response = match Command::from_frame(frame).unwrap() {
             Set(cmd) => {
-                db.insert(cmd.key().to_string(), cmd.value().to_vec());
+                // the guard is dropped at the end of this block, before any `.await`
+                let mut db = db.lock().unwrap();
+                db.insert(cmd.key().to_string(), cmd.value().clone());
                 Frame::Simple("OK".to_string())
             }
             Get(cmd) => {
+                let db = db.lock().unwrap();
                 if let Some(value) = db.get(cmd.key()) {
-                    Frame::Bulk(value.clone().into())
+                    Frame::Bulk(value.clone())
                 } else {
                     Frame::Null
                 }
