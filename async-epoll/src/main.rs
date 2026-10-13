@@ -235,7 +235,7 @@ impl AsyncListener {
 
     // returns a Future that accepts a connection; it does not accept here.
     // `accept().await` performs the accept asynchronously.
-    fn accept(&self) -> Accept {
+    fn accept(&self) -> Accept<'_> {
         Accept { listener: self }
     }
 }
@@ -312,7 +312,7 @@ impl AsyncReader {
     }
 
     // returns a Future that reads one line
-    fn read_line(&mut self) -> ReadLine {
+    fn read_line(&mut self) -> ReadLine<'_> {
         ReadLine { reader: self }
     }
 }

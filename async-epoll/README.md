@@ -82,6 +82,8 @@ thread.
   when idle (measured 99.7%). The book's text says the notification is cleared by writing
   0, but writing to an eventfd adds to the counter; it has to be read. `select` now calls
   `read_eventfd` in the eventfd branch (measured 0.0% idle).
-- **Compiler warnings.** `fn accept(&self) -> Accept` and `fn read_line(&mut self) -> ReadLine`
-  hide the elided lifetime; newer Rust suggests `Accept<'_>` / `ReadLine<'_>`.
+- **Explicit `'_` lifetimes (differs from the book).** The book writes
+  `fn accept(&self) -> Accept` and `fn read_line(&mut self) -> ReadLine`. Newer Rust warns
+  that this hides the lifetime borrowed from `self`, so they return `Accept<'_>` and
+  `ReadLine<'_>`.
 - Only reading is asynchronous; writing uses a blocking `BufWriter`, as in the book.
