@@ -44,6 +44,7 @@ cargo run --example <name>    # examples/<name>.rs, if any
 | [async-epoll](async-epoll/) | A concurrent echo server on epoll: an IOSelector (Reactor) that wakes Tasks, with async/await on top (Linux only) |
 | [tokio-basics](tokio-basics/) | Tokio: echo server, blocking vs async sleep, std vs tokio Mutex, oneshot, `spawn_blocking`, and the tutorial's mini-redis |
 | [async-await](async-await/) | async/await syntax: block modifiers, async blocks vs closures vs `async fn` |
+| [reconcile-loop](reconcile-loop/) | A controller-style reconcile loop: desired state on `watch`, revision dedup, diffing tasks, reporting back |
 
 Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `tokio-basics` → `async-await`.
 
