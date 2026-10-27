@@ -46,7 +46,7 @@ cargo run --example <name>    # examples/<name>.rs, if any
 | [async-await](async-await/) | async/await syntax: block modifiers, async blocks vs closures vs `async fn` |
 | [reconcile-loop](reconcile-loop/) | A controller-style reconcile loop: desired state on `watch`, revision dedup, diffing tasks, reporting back |
 
-Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `tokio-basics` → `async-await`.
+Suggested reading order: `thread` → `coroutine` → `pin` → `async-epoll` → `tokio-basics` → `async-await` → `reconcile-loop`.
 
 ## Systems
 
